@@ -1,27 +1,26 @@
 import 'dart:math' as math;
-import 'package:forge2d/forge2d.dart';
+
 import 'package:flame/palette.dart';
-import 'package:flame_forge2d/contact_callbacks.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
-import 'package:flame/flame.dart';
+import 'package:http/http.dart' as http;
 import 'package:flame/components.dart';
 import 'dart:ui' as ui;
 
 class Ball extends BodyComponent with ContactCallbacks {
+  late final String imageUrl;
+
   late Paint originalPaint;
   bool giveNudge = false;
   final double radius;
   final Vector2 _position;
   double _timeSinceNudge = 0.0;
   static const double _minNudgeRest = 2.0;
-  static const double _minVelocityThreshold = 12.0;
+  static const double _minVelocityThreshold = 14.0;
 
-  Ball(this._position, {this.radius = 20}) {
-    originalPaint = randomPaint();
-  }
+  Ball(this._position, {this.radius = 20, required this.imageUrl});
 
   Paint randomPaint() {
     final rng = math.Random();
@@ -37,6 +36,9 @@ class Ball extends BodyComponent with ContactCallbacks {
 
   int width = 80;
   int height = 80;
+
+  late ui.Image _image;
+
   @override
   Body createBody() {
     final bodyDef = BodyDef(
@@ -68,7 +70,7 @@ class Ball extends BodyComponent with ContactCallbacks {
     final centerFixtureDef = FixtureDef(polygonShape)
       ..restitution = 0.8
       ..density = 1.0
-      ..friction = 0.1;
+      ..friction = 0.05;
     body.createFixture(centerFixtureDef);
 
     // 各角に円形のフィクスチャを追加
@@ -98,66 +100,73 @@ class Ball extends BodyComponent with ContactCallbacks {
     return body;
   }
 
-  late ui.Image _image;
-  late final Paint _paint;
-  // balls.dartの修正部分
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    _image = await Flame.images.load('app1.png');
-    // 画像を塗りつぶしに使用するためのPaintを作成
-    _paint = Paint()
-      ..shader = ImageShader(
-        _image,
-        TileMode.clamp,
-        TileMode.clamp,
-        Matrix4.identity().scaled(1.0).storage,
-      );
+    final imageData = await _fetchImageData(imageUrl);
+
+    _image = await _decodeImage(imageData);
   }
 
-  // @override
-  // void render(Canvas canvas) {
-  //   super.render(canvas);
+  Future<Uint8List> _fetchImageData(String url) async {
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Failed to load image');
+    }
+  }
 
-  //   // forge2dのワールド座標をスクリーン座標に変換
-  //   final screenPosition = body.position;
-  //   // 画像の左上の座標を計算
-  //   final Offset imageTopLeft = Offset(
-  //     screenPosition.x - (width / 2),
-  //     screenPosition.y - (height / 2),
-  //   );
+  Future<ui.Image> _decodeImage(Uint8List imageData) async {
+    return await decodeImageFromList(imageData);
+  }
 
-  //   // 宛先の矩形を作成
-  //   final destinationRect = Rect.fromLTWH(
-  //     imageTopLeft.dx,
-  //     imageTopLeft.dy,
-  //     width.toDouble(),
-  //     height.toDouble(),
-  //   );
-  //   print('bodyから${screenPosition.y}、宛先${destinationRect}');
+  @override
+  void render(Canvas canvas) {
+    if (_image != null) {
+      super.render(canvas);
 
-  // 元の画像サイズから新しいサイズへの矩形を定義
-  // final sourceRect = Rect.fromLTWH(
-  //   0,
-  //   0,
-  //   _image.width.toDouble(),
-  //   _image.height.toDouble(),
-  // );
+      // 画像の描画位置をボディの位置に合わせる
+      final position = body.position;
+      final scaleX = 80 / _image.width;
+      final scaleY = 80 / _image.height;
+      // print(scaleX);
+      final matrix = Matrix4.identity()
+        ..translate(position.x * 0 + 40, position.y * 0 + 40)
+        ..rotateZ(0)
+        ..scale(scaleX, scaleY); // スケーリングを追加
 
-  // // 元の画像から新しいサイズの矩形へと描画
-  // canvas.drawImageRect(_image, sourceRect, destinationRect, _paint);
-  // }
+// ImageShaderを使用して画像を描画
+      final paint = Paint()
+        ..shader = ImageShader(
+          _image,
+          TileMode.repeated,
+          TileMode.repeated,
+          matrix.storage,
+        );
+
+      // 角が丸い矩形を定義
+      final rrect = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset.zero,
+          width: 80,
+          height: 80,
+        ),
+        const Radius.circular(20), // ここで角の丸みを設定
+      );
+
+      // 角が丸い矩形に画像を適用して描画
+      canvas.drawRRect(rrect, paint);
+    }
+  }
 
   @override
   void beginContact(Object other, Contact contact) {
-    // 接触したオブジェクトが Ball クラスのインスタンスであるかどうかを確認
-    if (other is Ball) {
-      // 両方のオブジェクトの速度が閾値以下なら衝突を無視
-      if (body.linearVelocity.length < _minVelocityThreshold &&
-          (other as Ball).body.linearVelocity.length < _minVelocityThreshold) {
-        return;
-      } // 衝突を検出
-      HapticFeedback.lightImpact(); // ボール同士の衝突を検出
+    // このオブジェクトまたは他のオブジェクトの速度が閾値以上であるかどうかを確認
+    if (body.linearVelocity.length >= _minVelocityThreshold ||
+        (other as dynamic).body.linearVelocity.length >=
+            _minVelocityThreshold) {
+      HapticFeedback.lightImpact(); // 速度閾値を超える衝突を検出
     }
   }
   // Handle any other contacts if necessary

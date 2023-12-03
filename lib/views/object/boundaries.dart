@@ -1,15 +1,12 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
-import 'package:flame_forge2d/forge2d_game.dart';
-import 'package:forge2d/forge2d.dart';
 import 'package:flame/palette.dart';
-import 'package:flame/game.dart';
-import 'package:flame_forge2d/body_component.dart';
 
 List<Wall> createBoundaries(Forge2DGame game) {
-  final Vector2 topLeft = Vector2.zero();
-  final Vector2 bottomRight = game.screenToWorld(game.size * 10.5);
+  final Vector2 topLeft = Vector2(-0.1, -0.1);
+
+  final Vector2 bottomRight = game.screenToWorld(game.size * 10.6);
   final Vector2 topRight = Vector2(bottomRight.x, topLeft.y);
   final Vector2 bottomLeft = Vector2(topLeft.x, bottomRight.y);
 
